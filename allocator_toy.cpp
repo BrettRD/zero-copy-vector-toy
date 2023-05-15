@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <memory>
 
 // we're going to take or borrow memory, we need to track obligations.
 // this struct contains the information that the user needs to free the memory
@@ -45,17 +46,17 @@ class zc_allocator  // note: not inheriting from : public std::allocator<T>
 
         // test if p is a pointer that we've borrowed
         // XXX definitely mutex against re-entrant read-modify
-        for(size_t i=0; i<borrowed_buffers.size(); i++) {
-            if(ptr == borrowed_buffers[i].ptr){
+        for(size_t i=0; i<borrowed_buffers->size(); i++) {
+            if(ptr == borrowed_buffers->at(i).ptr){
                 std::cout << "dropping wrapping on:" << std::hex
                     << std::showbase << ptr << std::dec << '\n';
 
                 // do the user's cleanup
-                borrowed_buffers[i].unref_cb(ptr, n);
+                borrowed_buffers->at(i).unref_cb(ptr, n);
 
                 // forget the pointer
-                borrowed_buffers[i] = borrowed_buffers.back();
-                borrowed_buffers.pop_back();
+                borrowed_buffers->at(i) = borrowed_buffers->back();
+                borrowed_buffers->pop_back();
 
                 return;
             }
@@ -76,7 +77,7 @@ class zc_allocator  // note: not inheriting from : public std::allocator<T>
                   << reinterpret_cast<void*>(p) << std::dec << '\n';
 
         // XXX mutex against concurrent writes, and concurrent read-write
-        borrowed_buffers.push_back({reinterpret_cast<void*>(p), cb});
+        borrowed_buffers->push_back({reinterpret_cast<void*>(p), cb});
     }
 
 
@@ -86,9 +87,11 @@ private:
     // this way we can be sure we're intercepting all deacllocate calls.
     std::allocator<T> std_allocator;
 
-    // declare the borrow list static so we can safely copy this allocator
-    //   and still free pointers wrapped on other allocators
-    static std::vector<zc_loan> borrowed_buffers;
+protected:
+    // static is not required, but reduces churn when we copy the allocator
+    //   We can't simply rely on static, because different template types will
+    //   have different instances, and we need to freely copy-construct between types 
+    static std::shared_ptr<std::vector<zc_loan> > borrowed_buffers;
 
     // trivial instrumentation
     void report(T* p, std::size_t n, bool alloc = true) const {
@@ -99,8 +102,15 @@ private:
 };
 
 // declare one instance of the zc_allocator pointer store
-template<>
-std::vector<zc_loan> zc_allocator<uint8_t>::borrowed_buffers = std::vector<zc_loan>();
+std::shared_ptr<std::vector<zc_loan> >
+    zc_allocator_borrowed_buffers =
+        std::make_shared<std::vector<zc_loan> >();
+// share it to all instances
+//    (we could simply use the global instance directly)
+template<class T>
+std::shared_ptr<std::vector<zc_loan> >
+    zc_allocator<T>::borrowed_buffers =
+        zc_allocator_borrowed_buffers;
 
 
 // all zc_allocators can de-allocate memory wrapped by other zc_allocators
