@@ -169,56 +169,87 @@ class zc_vector : public std::vector<T, zc_allocator<T> >
 int main()
 {
     uint8_t buf[5] = {0,1,2,3,4};
-    zc_vector<uint8_t> v;
+    {
+        zc_vector<uint8_t> v;
 
-    // first demonstrate that you can have a dirty vector
-    std::cout << "resize" << '\n';
-    v.resize(5);
-    std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
+        // first demonstrate that you can have a dirty vector
+        std::cout << "resize" << '\n';
+        v.resize(5);
+        std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
 
-    std::string cxt = "main context";
-    
-    std::cout << "wrap" << '\n';
-    v.wrap_buffer(
+        std::string cxt = "main context";
+        
+        std::cout << "wrap" << '\n';
+        v.wrap_buffer(
+            buf,
+            sizeof(buf),
+            [=](void* ptr, size_t len){
+                std::cout << "running unref lambda with captured context \"" << cxt << "\"" << '\n';
+            }
+        );
+
+        // v and buf now point to the same memory
+        v[0] = 6;
+        buf[1] = 7;
+
+        std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
+
+        // if we try to increase the size, std::vector will re-allocate and move data
+        std::cout << "push" << '\n';
+        v.push_back(0);
+        std::cout << "pop" << '\n';
+        v.pop_back();
+        std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
+
+        // v and buf now point to different memory
+        v[2] = 8;
+        buf[3] = 9;
+
+        std::cout << "buf looks like: ";
+        for(int i=0; i<5; i++){std::cout << (int)buf[i] << " ";}
+        std::cout << '\n';
+
+        std::cout << "v looks like:   ";
+        for(auto i: v){std::cout << (int)i << " ";}
+        std::cout << '\n';
+
+        std::cout << "re-wrapping " << '\n';
+
+        v.wrap_buffer(
+            buf,
+            sizeof(buf),
+            [=](void* ptr, size_t len){
+                std::cout << "running unref lambda with captured context \"" << cxt << "\"" << '\n';
+            }
+        );
+
+    }
+    zc_vector<uint8_t> m = zc_vector<uint8_t>();
+    m.wrap_buffer(
         buf,
         sizeof(buf),
         [=](void* ptr, size_t len){
-            std::cout << "running unref lambda with captured context \"" << cxt << "\"" << '\n';
+            std::cout << "running unref" << '\n';
         }
     );
+    std::vector<uint8_t, zc_allocator<uint8_t> > v = std::move(m);
 
-    // v and buf now point to the same memory
-    v[0] = 6;
-    buf[1] = 7;
-
-    std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
-
-    // if we try to increase the size, std::vector will re-allocate and move data
-    std::cout << "push" << '\n';
-    v.push_back(0);
-    std::cout << "pop" << '\n';
-    v.pop_back();
-    std::cout << "vector data is at" << std::hex << std::showbase << reinterpret_cast<void*>(v.data()) << std::dec << '\n';
-
-    // v and buf now point to different memory
-    v[2] = 8;
-    buf[3] = 9;
-
-    std::cout << "buf looks like: ";
-    for(int i=0; i<5; i++){std::cout << (int)buf[i] << " ";}
-    std::cout << '\n';
-
+    std::vector<uint8_t, zc_allocator<uint8_t> > w = {0,0,0};
     std::cout << "v looks like:   ";
     for(auto i: v){std::cout << (int)i << " ";}
     std::cout << '\n';
 
-    std::cout << "re-wrapping " << '\n';
+    std::cout << "w looks like:   ";
+    for(auto i: w){std::cout << (int)i << " ";}
+    std::cout << '\n';
 
-    v.wrap_buffer(
-        buf,
-        sizeof(buf),
-        [=](void* ptr, size_t len){
-            std::cout << "running unref lambda with captured context \"" << cxt << "\"" << '\n';
-        }
-    );
+    v.swap(w);
+    std::cout << "v looks like:   ";
+    for(auto i: v){std::cout << (int)i << " ";}
+    std::cout << '\n';
+
+    std::cout << "w looks like:   ";
+    for(auto i: w){std::cout << (int)i << " ";}
+    std::cout << '\n';
+
 }
